@@ -228,8 +228,16 @@ lemma second_derivative_alt_def:
   using Nth_derivative.simps(1,2) numeral_2_eq_2 by presburger
 
 
+definition C_k_on :: "nat \<Rightarrow> (real \<Rightarrow> real) \<Rightarrow> real set \<Rightarrow> bool" where
+  "C_k_on k f U \<equiv> (\<forall>n \<le> k. \<forall>x \<in> U. continuous_on U (Nth_derivative n f))"
 
  
+definition smooth :: "(real \<Rightarrow> real) \<Rightarrow> bool" where
+  "smooth f \<equiv> (\<forall>k. \<exists>U. open U \<and> (\<forall>x\<in>U. C_k_on k f U))"
+
+
+
+
 
 
 
@@ -264,6 +272,21 @@ proof -
 qed
 
 
+
+(*
+NOTE:
+has_real_derivative is a special case for has_field derivative is a special case for has_derivative
+
+We need to know how to use the computed derivatives to show that "has_derivative" is true.
+
+lemma test_lemma:
+  "\<exists>f'. (Nth_derivative 2 sigmoid has_derivative f') (at y)"
+proof -
+
+
+  have "(Nth_derivative 2 sigmoid has_real_derivative (Nth_derivative 3 sigmoid) y) (at y)"
+
+*)
 
 
 
@@ -432,38 +455,52 @@ qed
 
 
 
-
-lemma second_deriv_sigmoid_differentiable:
-  "(\<lambda>x. Nth_derivative n sigmoid x) differentiable (at x)"   
-proof(induct n)
-  case 0
-  then show ?case
-    by (simp add: field_differentiable_imp_differentiable sigmoid_differentiable') 
-next
-  fix n
-  assume "Nth_derivative n sigmoid differentiable at x"
-  have "Nth_derivative (Suc n) sigmoid x = (\<Sum>k = 1..(Suc n) +1. (-1)^(k+1) * fact (k - 1) * Stirling ((Suc n)+1) k * (sigmoid x)^k)"
-    using nth_derivative_sigmoid by presburger
-  then show "Nth_derivative (Suc n) sigmoid differentiable at x"
-  proof - 
-    
-  
-    
-
-
-
-  
-
+lemma smooth_sigmoid:
+  "smooth sigmoid"
+  unfolding smooth_def
+proof (clarify)
+  fix k :: nat
+  let ?U = UNIV  (* Use the entire real number line *)
+  have "open ?U" by simp
+  have C_k: "\<forall>x\<in>?U. C_k_on k sigmoid ?U"
+    unfolding C_k_on_def
+  proof (clarify)
+    fix x::real
+    fix n 
+    fix a::real
+    assume "x \<in> UNIV"
+    assume "n \<le> k"
+    assume "a \<in> UNIV"
+    have nth_deriv: "Nth_derivative n sigmoid x = (\<Sum>k = 1..n+1. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k)"
+      using nth_derivative_sigmoid by presburger    
+    have "\<And>k. k \<in> {1..n + 1} \<Longrightarrow> continuous_on UNIV (\<lambda>x.((-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k))"
+    proof - 
+      fix k
+      have cont_const: "continuous_on UNIV (\<lambda>x. (\<lambda>y. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k) x)"
+        using continuous_on_const by blast
+      have cont_sigmoid: "continuous_on UNIV (\<lambda>x.((sigmoid x)^k))"
+        by (simp add: continuous_on_power differentiable_imp_continuous_on sigmoid_differentiable)
+      show cont_prod: "continuous_on UNIV (\<lambda>x. (\<lambda>x. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k) x * (\<lambda>x. (sigmoid x)^k) x)"
+        using continuous_on_const by (rule continuous_intros, simp add: cont_sigmoid)
+    qed
+    then have "continuous_on UNIV (\<lambda>x. \<Sum>k = 1..n+1. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k)"
+      by(rule continuous_on_sum, simp)
+    then show "continuous_on UNIV (Nth_derivative n sigmoid)"
+      using nth_derivative_sigmoid by presburger
   qed
-  
+  then show "\<exists>U. open U \<and> (\<forall>x\<in>U. C_k_on k sigmoid U)"
+    by(rule_tac x=UNIV in exI, simp)
+qed
 
 
 
 
-(*
-lemma second_deriv_sigmoid_differentiable: 
-  "(\<lambda>x. Nth_derivative 2 sigmoid x) differentiable_on UNIV"
-*)
+
+
+
+
+    
+   
 
 
 
@@ -616,7 +653,6 @@ thm tendsto_Zfun_iff
 
 
 
-  (*Do we also need to do the at_bot version?*)
 lemma tendsto_divide_approaches_const:
   fixes f g :: "real \<Rightarrow> real"
   assumes f_lim:"((\<lambda>x. f (x::real)) \<longlongrightarrow> c) at_top"
@@ -665,6 +701,57 @@ proof(subst tendsto_at_top_epsilon_def, clarify)
       by linarith
   qed      
 qed
+
+lemma tendsto_divide_approaches_const_at_bot:
+  fixes f g :: "real \<Rightarrow> real"
+  assumes f_lim: "((\<lambda>x. f (x::real)) \<longlongrightarrow> c) at_bot"
+      and g_lim: "((\<lambda>x. g (x::real)) \<longlongrightarrow> \<infinity>) at_bot"
+    shows "((\<lambda>x. f (x::real) / g x) \<longlongrightarrow> 0) at_bot"
+proof(subst tendsto_at_bot_epsilon_def, clarify)
+  fix \<epsilon> :: real
+  assume \<epsilon>_pos: "0 < \<epsilon>"
+
+  obtain M where M_def: "M = abs c + 1" and M_gt_0: "M > 0"
+    by simp
+
+  obtain N1 where N1_def: "\<forall>x\<le>N1. abs (f x - c) < 1"
+    using f_lim tendsto_at_bot_epsilon_def zero_less_one by blast 
+
+  have f_bound: "\<forall>x\<le>N1. abs (f x) < M"
+    using M_def N1_def by fastforce
+
+  have M_over_\<epsilon>_gt_0: "M / \<epsilon> > 0"
+    by (simp add: M_gt_0 \<epsilon>_pos)
+
+  then obtain N2 where N2_def: "\<forall>x\<le>N2. g x > M / \<epsilon>"
+    using g_lim tendsto_inf_at_bot_epsilon_def by blast
+
+  obtain N where "N = min N1 N2" and N_le_N1: "N \<le> N1" and N_le_N2: "N \<le> N2"
+    by auto 
+    
+  show "\<exists>N::real. \<forall>x\<le>N. \<bar>f x / g x - 0\<bar> < \<epsilon>"
+  proof(intro exI [where x=N], clarify)
+    fix x :: real
+    assume x_le_N: "x \<le> N"
+
+    have f_bound_x: "\<bar>f x\<bar> < M"
+      using N_le_N1 f_bound x_le_N by auto
+
+    have g_bound_x: "g x > M / \<epsilon>"
+      using N2_def N_le_N2 x_le_N by auto 
+
+    have "\<bar>f x / g x\<bar> = \<bar>f x\<bar> / \<bar>g x\<bar>"
+      using abs_divide by blast
+    also have "... < M /  \<bar>g x\<bar>"
+      using M_over_\<epsilon>_gt_0 divide_strict_right_mono f_bound_x g_bound_x by force
+    also have  "... < \<epsilon>"
+      by (metis  M_over_\<epsilon>_gt_0 \<epsilon>_pos abs_real_def g_bound_x mult.commute order_less_irrefl order_less_trans pos_divide_less_eq)
+    finally show "\<bar>f x / g x - 0\<bar> < \<epsilon>"
+      by linarith
+  qed      
+qed
+
+
 
 
 
@@ -753,8 +840,6 @@ qed
 
 
 (*Limits of Derivative *)
-
-(*Perhaps have a separate lemma that states that sigmoid is "saturating"?*)
 
 
 lemma sig_deriv_lim_at_top: "((\<lambda>x. deriv sigmoid x) \<longlongrightarrow> 0) at_top"
