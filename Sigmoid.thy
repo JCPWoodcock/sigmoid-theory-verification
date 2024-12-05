@@ -171,7 +171,18 @@ proof(unfold sigmoid_def)
  \<open>(exp x * (1 + exp x) - exp x * exp x) / (1 + exp x)\<^sup>2 = (exp x + (exp x)\<^sup>2 - (exp x)\<^sup>2) / (1 + exp x)\<^sup>2\<close> \<open>(exp x + (exp x)\<^sup>2 - (exp x)\<^sup>2) / (1 + exp x)\<^sup>2 = exp x / (1 + exp x) * (1 / (1 + exp x))\<close> \<open>deriv (\<lambda>w. exp w / (1 + exp w)) x = (deriv exp x * (1 + exp x) - exp x * deriv (\<lambda>x. 1 + exp x) x) / (1 + exp x)\<^sup>2\<close>
     by presburger
 qed
-  
+
+
+lemma  sigmoid_derivative': "(sigmoid has_real_derivative (sigmoid x * (1 - sigmoid x))) (at x)"
+  by (metis field_differentiable_derivI sigmoid_derivative sigmoid_differentiable')
+
+
+
+
+
+
+
+
 (*Might be good to show that 0 < \<sigma>'(x) < 1/4*)
 
 (*Old proof  This one is so much shorter but which is preferred?
@@ -192,7 +203,17 @@ lemma sigmod_derivative':
 
 
 
+(*
+(*A pair of basic facts about derivatives*)
+lemma deriv_implies_has_real_derivative:
+  "f differentiable (at x) \<and> deriv f x = g x \<Longrightarrow> (f has_real_derivative g x) (at x)"
+  by (metis DERIV_deriv_iff_real_differentiable)
 
+
+lemma has_real_derivative_implies_differentiable:
+  "(f has_real_derivative g x) (at x) \<Longrightarrow> f differentiable (at x)"
+  using real_differentiable_def by blast
+*)
 
 
 
@@ -222,6 +243,9 @@ proof -
   then show ?thesis
     by simp
 qed
+
+
+
 
 lemma second_derivative_alt_def:
 "Nth_derivative 2 f x  = deriv (deriv f) x"
@@ -440,18 +464,40 @@ next
   qed
 qed
 
-(*Differentiable vs field differentiable*)
 
-lemma second_deriv_sigmoid_differentiable:
-  "(\<lambda>x. Nth_derivative 2 sigmoid x) differentiable (at x)"   
+lemma nth_derivative_sigmoid_differentiable:
+  "Nth_derivative n sigmoid differentiable (at x)"
 proof -
-  have second_derivative_diff:
-    "(\<lambda>x. sigmoid x * (1 - sigmoid x) * (1 - 2 * sigmoid x)) differentiable (at x)"
-    by (simp add: field_differentiable_imp_differentiable sigmoid_differentiable')
+  have "(\<lambda>x. \<Sum>k = 1..n+1. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k)
+   differentiable (at x)"
+  proof - 
+    have differentiable_terms: "\<And>k. 1 \<le> k \<and> k \<le> n+1 \<Longrightarrow> 
+      (\<lambda>x. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k) differentiable (at x)"
+    proof(clarify)
+      fix k ::nat
+      assume "1 \<le> k"
+      assume " k \<le> n+1"
+      show "(\<lambda>x. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k) differentiable (at x)"
+        by (simp add: field_differentiable_imp_differentiable sigmoid_differentiable')
+    qed
+    then show ?thesis
+      by(subst differentiable_sum,simp+)
+  qed
   then show ?thesis
-    using sigmoid_second_derivative by presburger
+     using nth_derivative_sigmoid by presburger 
 qed
 
+
+
+(*A pair of basic facts about derivatives*)
+lemma deriv_implies_has_real_derivative:
+  "f differentiable (at x) \<and> deriv f x = g x \<Longrightarrow> (f has_real_derivative g x) (at x)"
+  by (metis DERIV_deriv_iff_real_differentiable)
+
+
+lemma has_real_derivative_implies_differentiable:
+  "(f has_real_derivative g x) (at x) \<Longrightarrow> (f differentiable (at x)) \<and> ( deriv f x = g x) "
+  using DERIV_imp_deriv real_differentiable_def by blast
 
 
 
@@ -460,34 +506,11 @@ lemma smooth_sigmoid:
   unfolding smooth_def
 proof (clarify)
   fix k :: nat
-  let ?U = UNIV  (* Use the entire real number line *)
+  let ?U = UNIV  
   have "open ?U" by simp
   have C_k: "\<forall>x\<in>?U. C_k_on k sigmoid ?U"
     unfolding C_k_on_def
-  proof (clarify)
-    fix x::real
-    fix n 
-    fix a::real
-    assume "x \<in> UNIV"
-    assume "n \<le> k"
-    assume "a \<in> UNIV"
-    have nth_deriv: "Nth_derivative n sigmoid x = (\<Sum>k = 1..n+1. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k)"
-      using nth_derivative_sigmoid by presburger    
-    have "\<And>k. k \<in> {1..n + 1} \<Longrightarrow> continuous_on UNIV (\<lambda>x.((-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k))"
-    proof - 
-      fix k
-      have cont_const: "continuous_on UNIV (\<lambda>x. (\<lambda>y. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k) x)"
-        using continuous_on_const by blast
-      have cont_sigmoid: "continuous_on UNIV (\<lambda>x.((sigmoid x)^k))"
-        by (simp add: continuous_on_power differentiable_imp_continuous_on sigmoid_differentiable)
-      show cont_prod: "continuous_on UNIV (\<lambda>x. (\<lambda>x. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k) x * (\<lambda>x. (sigmoid x)^k) x)"
-        using continuous_on_const by (rule continuous_intros, simp add: cont_sigmoid)
-    qed
-    then have "continuous_on UNIV (\<lambda>x. \<Sum>k = 1..n+1. (-1)^(k+1) * fact (k - 1) * Stirling (n+1) k * (sigmoid x)^k)"
-      by(rule continuous_on_sum, simp)
-    then show "continuous_on UNIV (Nth_derivative n sigmoid)"
-      using nth_derivative_sigmoid by presburger
-  qed
+    by (clarify, simp add: differentiable_imp_continuous_on differentiable_on_def nth_derivative_sigmoid_differentiable)
   then show "\<exists>U. open U \<and> (\<forall>x\<in>U. C_k_on k sigmoid U)"
     by(rule_tac x=UNIV in exI, simp)
 qed
@@ -959,8 +982,122 @@ lemma sigmoid_inflection_point:
   by (simp add: sigmoid_alt_def sigmoid_second_derivative)
 
 
-(*Monotonicity of derivative *)
 
+
+
+lemma derivative_positive_implies_increasing:
+  fixes f :: "real \<Rightarrow> real"
+  assumes "a < b"
+    and has_deriv: "\<forall>x\<in>{a..b}. (f has_real_derivative f' x) (at x)"
+    and deriv_pos: "\<forall>x\<in>{a..b}. f' x > 0"
+  shows "\<forall>x y. x \<in> {a..b} \<and> y \<in> {a..b} \<and> x < y \<longrightarrow> f x < f y"
+proof (clarify)
+  fix x y
+  assume x_in: "x \<in> {a..b}" and y_in: "y \<in> {a..b}" and xy_order: "x < y"
+
+  have f_cont: "continuous_on {a..b} f"
+    by (meson DERIV_atLeastAtMost_imp_continuous_on atLeastAtMost_iff has_deriv)
+
+  have deriv_on: "\<forall>x\<in>{a<..<b}. (f has_real_derivative f' x) (at x)"
+  proof
+    fix c assume "c \<in> {a<..<b}"
+    thus "(f has_real_derivative f' c) (at c)"
+      using has_deriv by auto
+  qed
+
+  have "x \<in> {a..b}" and "y \<in> {a..b}" and "x < y"
+    using x_in y_in xy_order by auto
+  then have a_leq_x: "a \<le>  x" and y_leq_b: "y \<le> b"
+    using x_in y_in by auto
+
+
+
+  from xy_order have "\<exists>z>x. z < y \<and> f y - f x = (y - x) * f' z"
+    by (rule MVT2, meson a_leq_x y_leq_b atLeastAtMost_iff has_deriv order.trans)
+
+
+  then obtain c where c_in: "c \<in> {x<..<y}" and mvt_eq: "f y - f x = (y - x) * f' c"
+    by auto
+
+  have "c \<in> {a..b}"
+    using c_in x_in y_in by auto
+  hence "f' c > 0"
+    using deriv_pos by auto
+
+
+  have "f y - f x = (y - x) * f' c"
+    using mvt_eq by simp
+  also have "... > 0"
+    using xy_order `f' c > 0` by simp
+  finally have "f y - f x > 0"
+    by simp
+  thus "f x < f y"
+    by simp
+qed
+
+
+lemma derivative_negative_implies_decreasing:
+  fixes f :: "real \<Rightarrow> real"
+  assumes "a < b"
+    and has_deriv: "\<forall>x\<in>{a..b}. (f has_real_derivative f' x) (at x)"
+    and deriv_neg: "\<forall>x\<in>{a..b}. f' x < 0"
+  shows "\<forall>x y. x \<in> {a..b} \<and> y \<in> {a..b} \<and> x < y \<longrightarrow> f y < f x"
+proof (clarify)
+  fix x y
+  assume x_in: "x \<in> {a..b}" and y_in: "y \<in> {a..b}" and xy_order: "x < y"
+
+  have f_cont: "continuous_on {a..b} f"
+    by (meson DERIV_atLeastAtMost_imp_continuous_on atLeastAtMost_iff has_deriv)
+
+  have deriv_on: "\<forall>x\<in>{a<..<b}. (f has_real_derivative f' x) (at x)"
+  proof
+    fix c assume "c \<in> {a<..<b}"
+    thus "(f has_real_derivative f' c) (at c)"
+      using has_deriv by auto
+  qed
+
+  have "x \<in> {a..b}" and "y \<in> {a..b}" and "x < y"
+    using x_in y_in xy_order by auto
+  then have a_leq_x: "a \<le>  x" and y_leq_b: "y \<le> b"
+    using x_in y_in by auto
+
+
+
+  from xy_order have "\<exists>z>x. z < y \<and> f y - f x = (y - x) * f' z"
+    by (rule MVT2, meson a_leq_x y_leq_b atLeastAtMost_iff has_deriv order.trans)
+
+
+  then obtain c where c_in: "c \<in> {x<..<y}" and mvt_eq: "f y - f x = (y - x) * f' c"
+    by auto
+
+  have "c \<in> {a..b}"
+    using c_in x_in y_in by auto
+  hence "f' c < 0"
+    using deriv_neg by auto
+
+
+  have "f y - f x = (y - x) * f' c"
+    using mvt_eq by simp
+  also have "... < 0"
+    using xy_order `f' c < 0`
+    by (simp add: mult_pos_neg) 
+  finally have "f y - f x < 0"
+    by simp
+  thus "f y < f x"
+    by simp
+qed
+
+
+
+
+
+
+
+
+
+
+
+(*Monotonicity of derivative *)
 
 (*
 lemma deriv_sigmoid_monotonic_negatives:
@@ -972,14 +1109,17 @@ proof -
   have "deriv(deriv  sigmoid) x2 > 0"
     using assms second_derivative_alt_def second_derivative_positive_on by auto
   show ?thesis
+    oops
+*)
 
-
+thm derivative_negative_implies_decreasing
 
 lemma deriv_sigmoid_monotonic_positives:
-  assumes "x1 < x2" "0 < x1"
-  shows "deriv sigmoid x1 > deriv sigmoid x2"
+  assumes "0 < x1"
+  assumes "x1 < x2" 
+  shows "deriv sigmoid x2 < deriv sigmoid x1"
+  apply(subst derivative_negative_implies_decreasing[where a=x1, where b=x2, where f' = "deriv sigmoid"])
 
-*)
 
 
 thm continuous_on_eq_continuous_at[where s = "\<real>", where 'a1 = "real", where 'b = "real"]
